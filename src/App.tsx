@@ -464,93 +464,104 @@ function App() {
       </section>
 
       <div className="main-layout">
-        <section className="practice-panel">
-          <div className="practice-header">
-            <div>
-              <p className="section-label">
-                {isLongMode ? currentLongText.title : PRACTICE_STAGES[settings.stageIndex].name}
-                <span>
-                  {isLongMode ? `${itemCount.toLocaleString()}자` : `${itemCount}개 ${itemUnit}`}
-                </span>
-              </p>
-              {isLongMode ? (
-                <p className="long-description">{currentLongText.description}</p>
-              ) : (
-                <div className="allowed-keys" aria-label="현재 단계 키">
-                  {allowedKeys.map((key) => (
-                    <span key={key}>{key}</span>
-                  ))}
+        <div className="practice-stack">
+          <section className={`practice-panel mode-${settings.mode}`}>
+            <div className="practice-header">
+              <div>
+                <p className="section-label">
+                  {isLongMode ? currentLongText.title : PRACTICE_STAGES[settings.stageIndex].name}
+                  <span>{isLongMode ? `${itemCount.toLocaleString()}자` : `${itemCount}개 ${itemUnit}`}</span>
+                </p>
+                {isLongMode ? (
+                  <p className="long-description">{currentLongText.description}</p>
+                ) : (
+                  <div className="allowed-keys" aria-label="현재 단계 키">
+                    {allowedKeys.map((key) => (
+                      <span key={key}>{key}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {bestForCurrent ? (
+                <div className="best-record">
+                  최고 {bestForCurrent.cpm}타/분 · {bestForCurrent.accuracy}%
                 </div>
+              ) : null}
+            </div>
+
+            <div className={`target-area ${isLongMode ? "is-long" : ""} ${lastResult ? `is-${lastResult}` : ""}`} aria-live="polite">
+              {session.status === "finished" ? (
+                <div className="finish-state">
+                  <p>완료</p>
+                  <strong>{isLongMode ? "긴 글 완료" : `${session.completed}개 연습`}</strong>
+                </div>
+              ) : settings.mode === "keys" ? (
+                <div className="key-target">
+                  <span className="target-char">{currentTarget}</span>
+                  {activeShifted ? <span className="shift-badge">Shift</span> : null}
+                </div>
+              ) : (
+                <PracticeTextTarget mode={settings.mode} target={currentTarget} input={typedInput} />
               )}
             </div>
-            {bestForCurrent ? (
-              <div className="best-record">
-                최고 {bestForCurrent.cpm}타/분 · {bestForCurrent.accuracy}%
-              </div>
-            ) : null}
-          </div>
 
-          <div className={`target-area ${isLongMode ? "is-long" : ""} ${lastResult ? `is-${lastResult}` : ""}`} aria-live="polite">
-            {session.status === "finished" ? (
-              <div className="finish-state">
-                <p>완료</p>
-                <strong>{isLongMode ? "긴 글 완료" : `${session.completed}개 연습`}</strong>
-              </div>
-            ) : settings.mode === "keys" ? (
-              <div className="key-target">
-                <span className="target-char">{currentTarget}</span>
-                {activeShifted ? <span className="shift-badge">Shift</span> : null}
-              </div>
+            {settings.mode === "keys" ? (
+              <input
+                ref={inputRef as React.RefObject<HTMLInputElement>}
+                className="key-capture"
+                value=""
+                onChange={() => undefined}
+                onKeyDown={handleKeyPractice}
+                disabled={session.status === "finished"}
+                inputMode="text"
+                autoComplete="off"
+                spellCheck={false}
+                aria-label="자리연습 입력"
+              />
+            ) : settings.mode === "words" ? (
+              <input
+                ref={inputRef as React.RefObject<HTMLInputElement>}
+                className="word-input"
+                value={typedInput}
+                onChange={(event) => handleTextPractice(event.target.value)}
+                disabled={session.status === "finished"}
+                inputMode="text"
+                autoComplete="off"
+                spellCheck={false}
+                aria-label="낱말연습 입력"
+                placeholder="입력"
+              />
             ) : (
-              <PracticeTextTarget mode={settings.mode} target={currentTarget} input={typedInput} />
+              <textarea
+                ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+                className={`text-input ${isLongMode ? "is-long" : ""}`}
+                value={typedInput}
+                onChange={(event) => handleTextPractice(event.target.value)}
+                disabled={session.status === "finished"}
+                rows={isLongMode ? 8 : 3}
+                autoComplete="off"
+                spellCheck={false}
+                aria-label={isLongMode ? "긴 글 연습 입력" : "짧은 글 연습 입력"}
+                placeholder="입력"
+              />
             )}
-          </div>
 
-          {settings.mode === "keys" ? (
-            <input
-              ref={inputRef as React.RefObject<HTMLInputElement>}
-              className="key-capture"
-              value=""
-              onChange={() => undefined}
-              onKeyDown={handleKeyPractice}
-              disabled={session.status === "finished"}
-              inputMode="text"
-              autoComplete="off"
-              spellCheck={false}
-              aria-label="자리연습 입력"
-            />
-          ) : settings.mode === "words" ? (
-            <input
-              ref={inputRef as React.RefObject<HTMLInputElement>}
-              className="word-input"
-              value={typedInput}
-              onChange={(event) => handleTextPractice(event.target.value)}
-              disabled={session.status === "finished"}
-              inputMode="text"
-              autoComplete="off"
-              spellCheck={false}
-              aria-label="낱말연습 입력"
-              placeholder="입력"
-            />
-          ) : (
-            <textarea
-              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-              className={`text-input ${isLongMode ? "is-long" : ""}`}
-              value={typedInput}
-              onChange={(event) => handleTextPractice(event.target.value)}
-              disabled={session.status === "finished"}
-              rows={isLongMode ? 8 : 3}
-              autoComplete="off"
-              spellCheck={false}
-              aria-label={isLongMode ? "긴 글 연습 입력" : "짧은 글 연습 입력"}
-              placeholder="입력"
-            />
-          )}
+            <div className="progress-track" aria-label="진행률">
+              <span style={{ width: `${progressWidth}%` }} />
+            </div>
+          </section>
 
-          <div className="progress-track" aria-label="진행률">
-            <span style={{ width: `${progressWidth}%` }} />
-          </div>
-        </section>
+          {settings.showKeyboard ? (
+            <KeyboardView
+              activeCode={activeCode}
+              activeShifted={activeShifted}
+              pressedCode={pressedCode}
+              selectedStageIndex={keyboardStageIndex}
+              isFullKeyboard={isLongMode}
+              showFingers={settings.showFingers}
+            />
+          ) : null}
+        </div>
 
         <aside className="settings-panel" aria-label="설정">
           <div className="panel-title">
@@ -674,17 +685,6 @@ function App() {
           </div>
         </aside>
       </div>
-
-      {settings.showKeyboard ? (
-        <KeyboardView
-          activeCode={activeCode}
-          activeShifted={activeShifted}
-          pressedCode={pressedCode}
-          selectedStageIndex={keyboardStageIndex}
-          isFullKeyboard={isLongMode}
-          showFingers={settings.showFingers}
-        />
-      ) : null}
     </main>
   );
 }
@@ -740,8 +740,8 @@ function PracticeTextTarget({
         }
 
         return (
-          <span className={`${state} ${isSpace ? "space-char" : ""}`} key={`${char}-${index}`}>
-            {isSpace ? " " : char}
+          <span className={`${state} ${isSpace ? "plain-space" : ""}`} key={`${char}-${index}`}>
+            {char}
           </span>
         );
       })}

@@ -214,6 +214,15 @@ h2 {
   margin-top: 10px;
 }
 
+.long-description {
+  max-width: 620px;
+  margin: 10px 0 0;
+  color: #65758a;
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
 .allowed-keys span {
   display: grid;
   place-items: center;
@@ -250,6 +259,13 @@ h2 {
   background: #fff5f5;
 }
 
+.target-area.is-long {
+  align-items: stretch;
+  justify-items: stretch;
+  min-height: 330px;
+  padding: 0;
+}
+
 .key-target {
   display: flex;
   align-items: center;
@@ -282,7 +298,8 @@ h2 {
 }
 
 .word-target,
-.text-target {
+.text-target,
+.long-target {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -308,8 +325,22 @@ h2 {
   line-height: 1.46;
 }
 
+.long-target {
+  display: block;
+  width: 100%;
+  max-height: 430px;
+  overflow-y: auto;
+  padding: 24px 26px;
+  color: #172033;
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.76;
+  text-align: left;
+}
+
 .word-target span,
-.text-target span {
+.text-target span,
+.long-target span {
   display: inline-block;
   text-align: center;
   border-bottom: 5px solid transparent;
@@ -325,26 +356,43 @@ h2 {
   border-bottom-width: 3px;
 }
 
-.text-target .space-char {
+.long-target span {
+  min-width: auto;
+  padding: 0 0.01em;
+  border-bottom-width: 2px;
+}
+
+.text-target .space-char,
+.long-target .space-char {
   min-width: 0.58em;
   margin: 0 0.1em;
   border-bottom-color: #cdd6df;
 }
 
+.long-target .line-break {
+  display: block;
+  width: 100%;
+  height: 0.95em;
+  border: 0;
+}
+
 .word-target .match,
-.text-target .match {
+.text-target .match,
+.long-target .match {
   color: #2f9e44;
   border-bottom-color: #8ce99a;
 }
 
 .word-target .miss,
-.text-target .miss {
+.text-target .miss,
+.long-target .miss {
   color: #e03131;
   border-bottom-color: #ffa8a8;
 }
 
 .word-target .pending,
-.text-target .pending {
+.text-target .pending,
+.long-target .pending {
   color: #172033;
 }
 
@@ -388,6 +436,13 @@ h2 {
   padding: 14px 16px;
   line-height: 1.45;
   resize: vertical;
+}
+
+.text-input.is-long {
+  min-height: 176px;
+  font-size: 1.12rem;
+  font-weight: 700;
+  line-height: 1.65;
 }
 
 .key-capture {
@@ -499,7 +554,7 @@ h2 {
 
 .mode-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -534,9 +589,33 @@ h2 {
   box-shadow: inset 0 -3px 0 rgba(24, 100, 171, 0.12);
 }
 
-.stage-list {
+.stage-picker,
+.stage-list,
+.stage-options {
   display: grid;
   gap: 7px;
+}
+
+.stage-expand-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  border: 1px solid #cfe0ee;
+  border-radius: 8px;
+  background: #f7fbff;
+  color: #1864ab;
+  font-weight: 900;
+}
+
+.stage-options {
+  display: none;
+  padding-top: 3px;
+}
+
+.stage-options.is-open {
+  display: grid;
 }
 
 .stage-map-legend,
@@ -643,6 +722,86 @@ h2 {
 .stage-button.is-selected {
   border-color: #2f9e44;
   background: #f0fff4;
+}
+
+.long-text-picker {
+  display: grid;
+  gap: 10px;
+}
+
+.long-text-list {
+  display: grid;
+  gap: 8px;
+}
+
+.long-text-option {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 86px;
+  padding: 11px 52px 11px 12px;
+  border: 1px solid #d9e2e8;
+  border-radius: 8px;
+  background: #fff;
+  color: #172033;
+  text-align: left;
+}
+
+.long-text-option strong {
+  font-size: 0.95rem;
+}
+
+.long-text-option span {
+  color: #65758a;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.long-text-option em {
+  position: absolute;
+  top: 11px;
+  right: 12px;
+  color: #1864ab;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.long-text-option.is-selected {
+  border-color: #2f9e44;
+  background: #f0fff4;
+}
+
+.file-upload-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid #cfe0ee;
+  border-radius: 8px;
+  background: #f7fbff;
+  color: #1864ab;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.file-upload-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.file-notice {
+  margin: 0;
+  color: #5c6b7a;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.4;
 }
 
 .segmented-field,

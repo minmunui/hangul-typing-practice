@@ -1,6 +1,8 @@
 import {
   BookOpen,
   Check,
+  ChevronDown,
+  ChevronUp,
   CircleHelp,
   Eye,
   EyeOff,
@@ -12,9 +14,11 @@ import {
   Minus,
   Play,
   Plus,
+  ScrollText,
   Settings2,
   Target,
   Timer,
+  Upload,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -22,16 +26,18 @@ import {
   FINGER_SHORT_LABELS,
   KEY_LOOKUP,
   KEYBOARD_ROWS,
+  LONG_TEXT_BANK,
   PRACTICE_STAGES,
   getCumulativeKeys,
   getTextsForStage,
   getWordsForStage,
   type FingerId,
   type KeySpec,
+  type LongText,
   type PracticeStage,
 } from "./data/practice";
 
-type PracticeMode = "keys" | "words" | "texts";
+type PracticeMode = "keys" | "words" | "texts" | "long";
 type PracticeScope = "cumulative" | "stage";
 type SessionStatus = "idle" | "running" | "finished";
 type PracticeInput = HTMLInputElement | HTMLTextAreaElement;
@@ -105,15 +111,19 @@ const MODE_LABELS: Record<PracticeMode, string> = {
   keys: "자리",
   words: "낱말",
   texts: "짧은 글",
+  long: "긴 글",
 };
 
 function App() {
   const [settings, setSettings] = useStoredState<Settings>("hangul-typing-settings", DEFAULT_SETTINGS);
   const [best, setBest] = useStoredState<Record<string, BestRecord>>("hangul-typing-best", {});
+  const [selectedLongTextId, setSelectedLongTextId] = useState(LONG_TEXT_BANK[0].id);
+  const [uploadedLongText, setUploadedLongText] = useState<LongText | null>(null);
+  const [fileNotice, setFileNotice] = useState<string | null>(null);
   const [session, setSession] = useState<Session>(() => ({
     ...DEFAULT_SESSION,
-    recordKey: makeRecordKey(settings),
-    queue: createQueue(settings),
+    recordKey: makeRecordKey(settings, LONG_TEXT_BANK[0].id),
+    queue: createQueue(settings, LONG_TEXT_BANK[0].body),
   }));
   const [typedInput, setTypedInput] = useState("");
   const [lastResult, setLastResult] = useState<"correct" | "wrong" | null>(null);
@@ -122,7 +132,14 @@ function App() {
   const inputRef = useRef<PracticeInput>(null);
   const clearResultRef = useRef<number | null>(null);
 
+  const longTextOptions = useMemo(
+    () => (uploadedLongText ? [...LONG_TEXT_BANK, uploadedLongText] : LONG_TEXT_BANK),
+    [uploadedLongText],
+  );
+  const currentLongText =
+    longTextOptions.find((text) => text.id === selectedLongTextId) ?? longTextOptions[0] ?? LONG_TEXT_BANK[0];
   const currentTarget = session.queue[session.completed] ?? "";
+  const isLongMode = settings.mode === "long";
   const elapsedMs = getElapsedMs(session, now);
   const remainingSeconds =
     settings.limitSeconds > 0
@@ -134,10 +151,20 @@ function App() {
   const stageWords = useMemo(() => getWordsForStage(settings.stageIndex), [settings.stageIndex]);
   const stageTexts = useMemo(() => getTextsForStage(settings.stageIndex), [settings.stageIndex]);
   const allowedKeys = useMemo(() => getCumulativeKeys(settings.stageIndex), [settings.stageIndex]);
-  const recordKey = makeRecordKey(settings);
+  const recordKey = makeRecordKey(settings, currentLongText.id);
   const bestForCurrent = best[recordKey];
-  const itemCount = getVisibleItemCount(settings.mode, allowedKeys.length, stageWords.length, stageTexts.length);
+  const itemCount = getVisibleItemCount(
+    settings.mode,
+    allowedKeys.length,
+    stageWords.length,
+    stageTexts.length,
+    currentTarget.length,
+  );
   const itemUnit = getItemUnit(settings.mode);
+  const progressDone = isLongMode ? Math.min(typedInput.length, currentTarget.length) : Math.min(session.completed, settings.itemGoal);
+  const progressGoal = isLongMode ? currentTarget.length : settings.itemGoal;
+  const progressWidth = progressGoal > 0 ? Math.min(100, (progressDone / progressGoal) * 100) : 0;
+  const keyboardStageIndex = isLongMode ? PRACTICE_STAGES.length - 1 : settings.stageIndex;
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 250);
@@ -146,7 +173,7 @@ function App() {
 
   useEffect(() => {
     resetSession();
-  }, [settings.mode, settings.stageIndex, settings.itemGoal, settings.scope]);
+  }, [settings.mode, settings.stageIndex, settings.itemGoal, settings.scope, currentLongText.id]);
 
   useEffect(() => {
     if (session.status !== "finished" || !session.startedAt || !session.endedAt) {
@@ -221,7 +248,11 @@ function App() {
   }
 
   function resetSession() {
-    setSession({ ...DEFAULT_SESSION, recordKey: makeRecordKey(settings), queue: createQueue(settings) });
+    setSession({
+      ...DEFAULT_SESSION,
+      recordKey: makeRecordKey(settings, currentLongText.id),
+      queue: createQueue(settings, currentLongText.body),
+    });
     setTypedInput("");
     setLastResult(null);
     setPressedCode(null);
@@ -255,7 +286,7 @@ function App() {
         correctTyped: current.correctTyped + extraCorrect,
       };
 
-      if (nextCompleted >= settings.itemGoal) {
+      if (settings.mode === "long" || nextCompleted >= settings.itemGoal) {
         const endedAt = Date.now();
         return { ...nextSession, status: "finished", endedAt };
       }
@@ -339,6 +370,39 @@ function App() {
     }
   }
 
+  async function handleLongTextFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const fileInput = event.currentTarget;
+    const file = fileInput.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const body = normalizeLongText(await file.text());
+      if (!body) {
+        setFileNotice("내용이 있는 txt 파일을 선택해 주세요.");
+        return;
+      }
+
+      const title = file.name.replace(/\.txt$/i, "") || "불러온 글";
+      const nextText: LongText = {
+        id: `upload-${Date.now()}`,
+        title,
+        description: `내 컴퓨터에서 불러온 글 · ${body.length.toLocaleString()}자`,
+        body,
+      };
+
+      setUploadedLongText(nextText);
+      setSelectedLongTextId(nextText.id);
+      setFileNotice(`${file.name} 파일을 불러왔습니다.`);
+      updateSettings({ mode: "long" });
+    } catch {
+      setFileNotice("파일을 읽지 못했습니다. txt 파일인지 확인해 주세요.");
+    } finally {
+      fileInput.value = "";
+    }
+  }
+
   const targetKey = KEY_LOOKUP[currentTarget];
   const activeCode = settings.mode === "keys" ? targetKey?.code : undefined;
   const activeShifted = settings.mode === "keys" ? targetKey?.shifted : false;
@@ -386,9 +450,9 @@ function App() {
         <Metric
           icon={<Target size={18} />}
           label="진행"
-          value={`${Math.min(session.completed, settings.itemGoal)}`}
-          suffix={`/ ${settings.itemGoal}`}
-          help="목표 횟수 중 지금까지 끝낸 개수입니다."
+          value={`${progressDone}`}
+          suffix={`/ ${progressGoal}`}
+          help={isLongMode ? "긴 글 전체 글자 중 지금까지 입력한 글자 수입니다." : "목표 횟수 중 지금까지 끝낸 개수입니다."}
         />
         <Metric
           icon={<Timer size={18} />}
@@ -404,16 +468,20 @@ function App() {
           <div className="practice-header">
             <div>
               <p className="section-label">
-                {PRACTICE_STAGES[settings.stageIndex].name}
+                {isLongMode ? currentLongText.title : PRACTICE_STAGES[settings.stageIndex].name}
                 <span>
-                  {itemCount}개 {itemUnit}
+                  {isLongMode ? `${itemCount.toLocaleString()}자` : `${itemCount}개 ${itemUnit}`}
                 </span>
               </p>
-              <div className="allowed-keys" aria-label="현재 단계 키">
-                {allowedKeys.map((key) => (
-                  <span key={key}>{key}</span>
-                ))}
-              </div>
+              {isLongMode ? (
+                <p className="long-description">{currentLongText.description}</p>
+              ) : (
+                <div className="allowed-keys" aria-label="현재 단계 키">
+                  {allowedKeys.map((key) => (
+                    <span key={key}>{key}</span>
+                  ))}
+                </div>
+              )}
             </div>
             {bestForCurrent ? (
               <div className="best-record">
@@ -422,11 +490,11 @@ function App() {
             ) : null}
           </div>
 
-          <div className={`target-area ${lastResult ? `is-${lastResult}` : ""}`} aria-live="polite">
+          <div className={`target-area ${isLongMode ? "is-long" : ""} ${lastResult ? `is-${lastResult}` : ""}`} aria-live="polite">
             {session.status === "finished" ? (
               <div className="finish-state">
                 <p>완료</p>
-                <strong>{session.completed}개 연습</strong>
+                <strong>{isLongMode ? "긴 글 완료" : `${session.completed}개 연습`}</strong>
               </div>
             ) : settings.mode === "keys" ? (
               <div className="key-target">
@@ -451,20 +519,7 @@ function App() {
               spellCheck={false}
               aria-label="자리연습 입력"
             />
-          ) : settings.mode === "texts" ? (
-            <textarea
-              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-              className="text-input"
-              value={typedInput}
-              onChange={(event) => handleTextPractice(event.target.value)}
-              disabled={session.status === "finished"}
-              rows={3}
-              autoComplete="off"
-              spellCheck={false}
-              aria-label="짧은 글 연습 입력"
-              placeholder="입력"
-            />
-          ) : (
+          ) : settings.mode === "words" ? (
             <input
               ref={inputRef as React.RefObject<HTMLInputElement>}
               className="word-input"
@@ -477,10 +532,23 @@ function App() {
               aria-label="낱말연습 입력"
               placeholder="입력"
             />
+          ) : (
+            <textarea
+              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+              className={`text-input ${isLongMode ? "is-long" : ""}`}
+              value={typedInput}
+              onChange={(event) => handleTextPractice(event.target.value)}
+              disabled={session.status === "finished"}
+              rows={isLongMode ? 8 : 3}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label={isLongMode ? "긴 글 연습 입력" : "짧은 글 연습 입력"}
+              placeholder="입력"
+            />
           )}
 
           <div className="progress-track" aria-label="진행률">
-            <span style={{ width: `${Math.min(100, (session.completed / settings.itemGoal) * 100)}%` }} />
+            <span style={{ width: `${progressWidth}%` }} />
           </div>
         </section>
 
@@ -491,7 +559,7 @@ function App() {
           </div>
 
           <div className="setting-block">
-            <LabelWithHelp label="연습 종류" help="자리, 낱말, 짧은 글 중에서 오늘 연습할 방식을 고릅니다." />
+            <LabelWithHelp label="연습 종류" help="자리, 낱말, 짧은 글, 긴 글 중에서 오늘 연습할 방식을 고릅니다." />
             <div className="mode-grid">
               <ChoiceButton
                 active={settings.mode === "keys"}
@@ -514,13 +582,33 @@ function App() {
                 help="짧은 문장을 보며 띄어쓰기까지 천천히 입력합니다."
                 onClick={() => updateSettings({ mode: "texts" })}
               />
+              <ChoiceButton
+                active={settings.mode === "long"}
+                icon={<ScrollText size={20} />}
+                label="긴 글"
+                help="진도와 상관없이 긴 문단을 읽으며 전체 글을 이어서 입력합니다."
+                onClick={() => updateSettings({ mode: "long" })}
+              />
             </div>
           </div>
 
-          <div className="setting-block">
-            <LabelWithHelp label="진도 단계" help="아래 단계로 갈수록 사용할 수 있는 자판이 늘어납니다." />
-            <StageSelector currentIndex={settings.stageIndex} onChange={(stageIndex) => updateSettings({ stageIndex })} />
-          </div>
+          {isLongMode ? (
+            <div className="setting-block">
+              <LabelWithHelp label="긴 글 선택" help="기본 글을 고르거나 내 컴퓨터의 txt 파일을 불러와 연습합니다." />
+              <LongTextSelector
+                options={longTextOptions}
+                selectedId={currentLongText.id}
+                notice={fileNotice}
+                onSelect={setSelectedLongTextId}
+                onUpload={handleLongTextFile}
+              />
+            </div>
+          ) : (
+            <div className="setting-block">
+              <LabelWithHelp label="진도 단계" help="아래 단계로 갈수록 사용할 수 있는 자판이 늘어납니다." />
+              <StageSelector currentIndex={settings.stageIndex} onChange={(stageIndex) => updateSettings({ stageIndex })} />
+            </div>
+          )}
 
           {settings.mode === "keys" ? (
             <SegmentedControl
@@ -550,20 +638,22 @@ function App() {
               onIncrease={() => updateSettings({ limitSeconds: clamp(settings.limitSeconds + 10, 0, 600) })}
               onPreset={(limitSeconds) => updateSettings({ limitSeconds })}
             />
-            <Stepper
-              label="목표 횟수"
-              help="이 개수만큼 끝내면 연습이 자동으로 마무리됩니다."
-              valueText={`${settings.itemGoal}개`}
-              presets={[
-                { label: "5개", value: 5 },
-                { label: "10개", value: 10 },
-                { label: "30개", value: 30 },
-                { label: "50개", value: 50 },
-              ]}
-              onDecrease={() => updateSettings({ itemGoal: clamp(settings.itemGoal - 5, 5, 200) })}
-              onIncrease={() => updateSettings({ itemGoal: clamp(settings.itemGoal + 5, 5, 200) })}
-              onPreset={(itemGoal) => updateSettings({ itemGoal })}
-            />
+            {isLongMode ? null : (
+              <Stepper
+                label="목표 횟수"
+                help="이 개수만큼 끝내면 연습이 자동으로 마무리됩니다."
+                valueText={`${settings.itemGoal}개`}
+                presets={[
+                  { label: "5개", value: 5 },
+                  { label: "10개", value: 10 },
+                  { label: "30개", value: 30 },
+                  { label: "50개", value: 50 },
+                ]}
+                onDecrease={() => updateSettings({ itemGoal: clamp(settings.itemGoal - 5, 5, 200) })}
+                onIncrease={() => updateSettings({ itemGoal: clamp(settings.itemGoal + 5, 5, 200) })}
+                onPreset={(itemGoal) => updateSettings({ itemGoal })}
+              />
+            )}
           </div>
 
           <div className="toggle-list">
@@ -590,7 +680,8 @@ function App() {
           activeCode={activeCode}
           activeShifted={activeShifted}
           pressedCode={pressedCode}
-          selectedStageIndex={settings.stageIndex}
+          selectedStageIndex={keyboardStageIndex}
+          isFullKeyboard={isLongMode}
           showFingers={settings.showFingers}
         />
       ) : null}
@@ -634,12 +725,19 @@ function PracticeTextTarget({
   target: string;
   input: string;
 }) {
+  const className = mode === "words" ? "word-target" : mode === "long" ? "long-target" : "text-target";
+
   return (
-    <div className={mode === "texts" ? "text-target" : "word-target"} aria-label="연습 문구">
+    <div className={className} aria-label="연습 문구">
       {[...target].map((char, index) => {
         const typed = input[index];
         const state = typed === undefined ? "pending" : typed === char ? "match" : "miss";
         const isSpace = char === " ";
+        const isLineBreak = char === "\n";
+
+        if (isLineBreak) {
+          return <span className={`line-break ${state}`} key={`line-${index}`} aria-label="줄바꿈" />;
+        }
 
         return (
           <span className={`${state} ${isSpace ? "space-char" : ""}`} key={`${char}-${index}`}>
@@ -656,22 +754,24 @@ function KeyboardView({
   activeShifted,
   pressedCode,
   selectedStageIndex,
+  isFullKeyboard,
   showFingers,
 }: {
   activeCode?: string;
   activeShifted: boolean;
   pressedCode: string | null;
   selectedStageIndex: number;
+  isFullKeyboard: boolean;
   showFingers: boolean;
 }) {
   return (
     <section className="keyboard-panel" aria-label="두벌식 키보드">
       <div className="keyboard-panel-header">
         <div>
-          <strong>선택한 단계의 자판 범위</strong>
-          <span>색이 진한 키를 중심으로 연습합니다.</span>
+          <strong>{isFullKeyboard ? "긴 글 연습용 전체 자판" : "선택한 단계의 자판 범위"}</strong>
+          <span>{isFullKeyboard ? "긴 글은 모든 자판을 사용하므로 전체 범위를 보여 줍니다." : "색이 진한 키를 중심으로 연습합니다."}</span>
         </div>
-        <KeyboardLegend />
+        <KeyboardLegend isFullKeyboard={isFullKeyboard} />
       </div>
       {KEYBOARD_ROWS.map((row, rowIndex) => (
         <div className={`keyboard-row row-${rowIndex}`} key={rowIndex}>
@@ -706,12 +806,12 @@ function KeyboardView({
   );
 }
 
-function KeyboardLegend() {
+function KeyboardLegend({ isFullKeyboard }: { isFullKeyboard: boolean }) {
   return (
     <div className="keyboard-legend" aria-label="자판 색상 설명">
-      <span className="legend-current">이번 단계</span>
-      <span className="legend-learned">이미 배움</span>
-      <span className="legend-locked">나중 단계</span>
+      <span className="legend-current">{isFullKeyboard ? "응용 키" : "이번 단계"}</span>
+      <span className="legend-learned">{isFullKeyboard ? "기본 키" : "이미 배움"}</span>
+      {isFullKeyboard ? null : <span className="legend-locked">나중 단계</span>}
     </div>
   );
 }
@@ -789,21 +889,88 @@ function StageSelector({
   currentIndex: number;
   onChange: (stageIndex: number) => void;
 }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const currentStage = PRACTICE_STAGES[currentIndex];
+
   return (
-    <div className="stage-list">
-      <div className="stage-map-legend" aria-label="단계 지도 색상 설명">
-        <span className="legend-current">새로 배우는 자리</span>
-        <span className="legend-learned">앞 단계 자리</span>
+    <div className="stage-picker">
+      <StageButton
+        active
+        stageIndex={currentIndex}
+        stage={currentStage}
+        onClick={() => setIsOpen((open) => !open)}
+      />
+      <button
+        className="stage-expand-button"
+        type="button"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        <span>{isOpen ? "단계 목록 닫기" : "다른 단계 선택"}</span>
+        {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+      </button>
+
+      <div className={`stage-options ${isOpen ? "is-open" : ""}`}>
+        <div className="stage-map-legend" aria-label="단계 지도 색상 설명">
+          <span className="legend-current">새로 배우는 자리</span>
+          <span className="legend-learned">앞 단계 자리</span>
+        </div>
+        <div className="stage-list">
+          {PRACTICE_STAGES.map((stage, index) => (
+            <StageButton
+              active={currentIndex === index}
+              key={stage.id}
+              stageIndex={index}
+              stage={stage}
+              onClick={() => {
+                onChange(index);
+                setIsOpen(false);
+              }}
+            />
+          ))}
+        </div>
       </div>
-      {PRACTICE_STAGES.map((stage, index) => (
-        <StageButton
-          active={currentIndex === index}
-          key={stage.id}
-          stageIndex={index}
-          stage={stage}
-          onClick={() => onChange(index)}
-        />
-      ))}
+    </div>
+  );
+}
+
+function LongTextSelector({
+  options,
+  selectedId,
+  notice,
+  onSelect,
+  onUpload,
+}: {
+  options: LongText[];
+  selectedId: string;
+  notice: string | null;
+  onSelect: (id: string) => void;
+  onUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <div className="long-text-picker">
+      <div className="long-text-list">
+        {options.map((text) => (
+          <button
+            className={`long-text-option ${selectedId === text.id ? "is-selected" : ""}`}
+            key={text.id}
+            onClick={() => onSelect(text.id)}
+            type="button"
+            aria-pressed={selectedId === text.id}
+          >
+            <strong>{text.title}</strong>
+            <span>{text.description}</span>
+            <em>{text.body.length.toLocaleString()}자</em>
+          </button>
+        ))}
+      </div>
+
+      <label className="file-upload-button">
+        <Upload size={18} />
+        <span>txt 파일 불러오기</span>
+        <input type="file" accept=".txt,text/plain" onChange={onUpload} />
+      </label>
+      {notice ? <p className="file-notice">{notice}</p> : null}
     </div>
   );
 }
@@ -942,7 +1109,11 @@ function ToggleButton({
   );
 }
 
-function createQueue(settings: Settings) {
+function createQueue(settings: Settings, longTextBody = LONG_TEXT_BANK[0].body) {
+  if (settings.mode === "long") {
+    return [longTextBody];
+  }
+
   const source =
     settings.mode === "keys"
       ? settings.scope === "stage"
@@ -971,17 +1142,25 @@ function createQueue(settings: Settings) {
   return queue.slice(0, settings.itemGoal);
 }
 
-function makeRecordKey(settings: Settings) {
+function makeRecordKey(settings: Settings, longTextId = LONG_TEXT_BANK[0].id) {
+  if (settings.mode === "long") {
+    return `long-${longTextId}`;
+  }
+
   return `${settings.mode}-${settings.stageIndex}`;
 }
 
-function getVisibleItemCount(mode: PracticeMode, keys: number, words: number, texts: number) {
+function getVisibleItemCount(mode: PracticeMode, keys: number, words: number, texts: number, longChars: number) {
   if (mode === "keys") {
     return keys;
   }
 
   if (mode === "words") {
     return words;
+  }
+
+  if (mode === "long") {
+    return longChars;
   }
 
   return texts;
@@ -993,6 +1172,10 @@ function getItemUnit(mode: PracticeMode) {
   }
 
   return MODE_LABELS[mode];
+}
+
+function normalizeLongText(text: string) {
+  return text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
 }
 
 function getKeyStageStatus(key: KeySpec, selectedStageIndex: number) {
